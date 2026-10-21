@@ -9,6 +9,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@400;600&family=Cinzel:wght@400;600&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Gowun+Batang&family=Inter:wght@200;300;400;500&family=Montserrat:wght@300;400&family=Nanum+Myeongjo:wght@400;700&family=Noto+Serif+KR:wght@200;300;400&family=Oswald:wght@300;400&family=Playfair+Display:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
     
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
     <style>
         :root {
             --bg-color: #F8F8F9;
@@ -830,6 +833,11 @@
     <div class="admin-toggle-btn" id="adminToggleBtn" onclick="handleAdminToggle()">[ADMIN]</div>
 
     <script>
+        // Supabase 설정
+        const SUPABASE_URL = 'https://mwnoecvdrliuqbfyokzh.supabase.co';
+        const SUPABASE_ANON_KEY = 'sb_publishable_qgvIIlhJ4FIsYqJoHjUFww_bXzDCgxE';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
         const ADMIN_PW = "anrndghktkacjsfl99";
         let isAdmin = false;
         let currentLogId = null;
@@ -841,25 +849,6 @@
             "https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=800&q=80",
             "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80",
             "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=800&q=80"
-        ];
-
-        const DEFAULT_LOGS = [
-            {
-                id: 1,
-                title: "어릴 적 내 모습",
-                titleSize: "2rem",
-                category: "PLACES",
-                content: "빛과 그림자가 만들어내는 시각적 대칭과 여백의 미학.<br><br><img src='https://images.unsplash.com/photo-1513694203232-719a280e022f?auto=format&fit=crop&w=800&q=80'><br>명암의 경계에서 느껴지는 정숙한 아우라입니다.",
-                date: "2026.03.15"
-            },
-            {
-                id: 2,
-                title: "Silence in the City",
-                titleSize: "2rem",
-                category: "VOICES",
-                content: "도시의 스카이라인 속에 차분하게 스며드는 정적.<br><br><img src='https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80'>",
-                date: "2026.03.10"
-            }
         ];
 
         // 이미지 자동 압축 헬퍼 함수
@@ -910,20 +899,10 @@
             }
         };
 
-        window.onload = function() {
-            if (!localStorage.getItem('mug_main_img')) {
-                localStorage.setItem('mug_main_img', DEFAULT_MAIN_IMG);
-            }
-            if (!localStorage.getItem('mug_greeting_imgs')) {
-                localStorage.setItem('mug_greeting_imgs', JSON.stringify(DEFAULT_GREETING_IMGS));
-            }
-            if (!localStorage.getItem('mug_logs')) {
-                localStorage.setItem('mug_logs', JSON.stringify(DEFAULT_LOGS));
-            }
-
-            loadMainVisual();
-            renderGreetingPhotos();
-            renderAlbumView();
+        window.onload = async function() {
+            await loadMainVisual();
+            await renderGreetingPhotos();
+            await renderAlbumView();
             setupPasteImageHandler();
 
             history.replaceState({ tab: 'main' }, '');
@@ -986,9 +965,21 @@
             }
         }
 
-        // Main Visual Logic
-        function loadMainVisual() {
-            const url = localStorage.getItem('mug_main_img') || DEFAULT_MAIN_IMG;
+        // Main Visual Logic (Supabase 연동)
+        async function loadMainVisual() {
+            let url = DEFAULT_MAIN_IMG;
+            try {
+                const { data, error } = await supabaseClient
+                    .from('posts')
+                    .select('*')
+                    .eq('category', 'SETTING_MAIN')
+                    .limit(1);
+                if (data && data.length > 0) {
+                    url = data[0].content;
+                }
+            } catch (err) {
+                console.error(err);
+            }
             document.getElementById('displayMainImg').src = url;
             document.getElementById('editMainImg').value = url;
         }
@@ -1002,20 +993,37 @@
             }
         }
 
-        function saveMainVisual() {
+        async function saveMainVisual() {
             const url = document.getElementById('editMainImg').value;
             try {
-                localStorage.setItem('mug_main_img', url);
-                loadMainVisual();
-                alert("메인 비주얼 사진이 저장되었습니다.");
+                // 기존 메인 설정 삭제 후 새로 저장
+                await supabaseClient.from('posts').delete().eq('category', 'SETTING_MAIN');
+                const { error } = await supabaseClient.from('posts').insert([
+                    { title: 'MAIN', category: 'SETTING_MAIN', content: url, date: '2026.01.01' }
+                ]);
+                if (error) throw error;
+                await loadMainVisual();
+                alert("메인 비주얼 사진이 Supabase에 저장되었습니다.");
             } catch (e) {
-                alert("저장 용량이 초과되었습니다. 이미지 크기를 줄이거나 URL 링크를 사용해 주세요.");
+                alert("저장 중 오류가 발생했습니다.");
             }
         }
 
-        // Greeting Photos Logic
-        function renderGreetingPhotos() {
-            const imgs = JSON.parse(localStorage.getItem('mug_greeting_imgs')) || DEFAULT_GREETING_IMGS;
+        // Greeting Photos Logic (Supabase 연동)
+        async function renderGreetingPhotos() {
+            let imgs = DEFAULT_GREETING_IMGS;
+            try {
+                const { data, error } = await supabaseClient
+                    .from('posts')
+                    .select('*')
+                    .eq('category', 'SETTING_GREETING');
+                if (data && data.length > 0) {
+                    imgs = data.map(item => item.content);
+                }
+            } catch (err) {
+                console.error(err);
+            }
+
             const grid = document.getElementById('greetingGrid');
             grid.innerHTML = '';
 
@@ -1024,7 +1032,7 @@
                 card.className = 'greeting-card';
                 card.innerHTML = `
                     <img src="${src}" alt="Greeting Photo ${idx + 1}" onclick="openLightbox(this.src)">
-                    ${isAdmin ? `<button class="btn-action delete" style="display:block; margin:8px auto; cursor:pointer;" onclick="deleteGreetingImg(${idx})">삭제</button>` : ''}
+                    ${isAdmin ? `<button class="btn-action delete" style="display:block; margin:8px auto; cursor:pointer;" onclick="deleteGreetingImg('${src}')">삭제</button>` : ''}
                 `;
                 grid.appendChild(card);
             });
@@ -1038,29 +1046,31 @@
             }
         }
 
-        function addGreetingImage() {
+        async function addGreetingImage() {
             const url = document.getElementById('newGreetingImgUrl').value;
             if (!url) { alert("사진 URL이나 파일을 선택해주세요."); return; }
 
-            const imgs = JSON.parse(localStorage.getItem('mug_greeting_imgs')) || [];
-            imgs.unshift(url);
-            
             try {
-                localStorage.setItem('mug_greeting_imgs', JSON.stringify(imgs));
-                renderGreetingPhotos();
+                const { error } = await supabaseClient.from('posts').insert([
+                    { title: 'GREETING', category: 'SETTING_GREETING', content: url, date: '2026.01.01' }
+                ]);
+                if (error) throw error;
+                await renderGreetingPhotos();
                 document.getElementById('newGreetingImgUrl').value = '';
                 alert("GREETING 사진첩에 사진이 추가되었습니다.");
             } catch (e) {
-                alert("저장 공간이 부족합니다. 기존 사진을 삭제 후 다시 시도해 주세요.");
+                alert("저장 중 오류가 발생했습니다.");
             }
         }
 
-        function deleteGreetingImg(index) {
+        async function deleteGreetingImg(imgUrl) {
             if (confirm("이 사진을 사진첩에서 삭제하시겠습니까?")) {
-                let imgs = JSON.parse(localStorage.getItem('mug_greeting_imgs')) || [];
-                imgs.splice(index, 1);
-                localStorage.setItem('mug_greeting_imgs', JSON.stringify(imgs));
-                renderGreetingPhotos();
+                try {
+                    await supabaseClient.from('posts').delete().eq('category', 'SETTING_GREETING').eq('content', imgUrl);
+                    await renderGreetingPhotos();
+                } catch (e) {
+                    alert("삭제 중 오류가 발생했습니다.");
+                }
             }
         }
 
@@ -1083,9 +1093,20 @@
             renderAlbumView();
         }
 
-        // Album & Detail View
-        function renderAlbumView() {
-            const logs = JSON.parse(localStorage.getItem('mug_logs')) || [];
+        // Album & Detail View (Supabase 연동)
+        async function renderAlbumView() {
+            let logs = [];
+            try {
+                const { data, error } = await supabaseClient
+                    .from('posts')
+                    .select('*')
+                    .in('category', ['PLACES', 'WISHES', 'VOICES'])
+                    .order('id', { ascending: false });
+                if (data) logs = data;
+            } catch (err) {
+                console.error(err);
+            }
+
             const grid = document.getElementById('albumView');
             grid.innerHTML = '';
 
@@ -1123,22 +1144,33 @@
             }
         }
 
-        function openDetailView(logId, pushHistory = true) {
-            currentLogId = logId;
+        async function openDetailView(logId, pushHistory = true) {
+            currentLogId = Number(logId);
             document.getElementById('categoryFilterBar').style.display = 'none';
             document.getElementById('albumView').style.display = 'none';
             document.getElementById('detailView').style.display = 'grid';
 
-            renderCategoryHierarchySidebar();
-            loadSingleArticle(logId);
+            await renderCategoryHierarchySidebar();
+            await loadSingleArticle(currentLogId);
 
             if (pushHistory) {
-                history.pushState({ tab: 'log', logId: logId }, '', `#log-${logId}`);
+                history.pushState({ tab: 'log', logId: currentLogId }, '', `#log-${currentLogId}`);
             }
         }
 
-        function renderCategoryHierarchySidebar() {
-            const logs = JSON.parse(localStorage.getItem('mug_logs')) || [];
+        async function renderCategoryHierarchySidebar() {
+            let logs = [];
+            try {
+                const { data } = await supabaseClient
+                    .from('posts')
+                    .select('*')
+                    .in('category', ['PLACES', 'WISHES', 'VOICES'])
+                    .order('id', { ascending: false });
+                if (data) logs = data;
+            } catch (err) {
+                console.error(err);
+            }
+
             const sidebar = document.getElementById('sidebarContainer');
             sidebar.innerHTML = '';
 
@@ -1185,24 +1217,32 @@
             });
         }
 
-        function loadSingleArticle(logId) {
-            const logs = JSON.parse(localStorage.getItem('mug_logs')) || [];
-            const log = logs.find(l => l.id === logId);
-            if (!log) return;
+        async function loadSingleArticle(logId) {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('posts')
+                    .select('*')
+                    .eq('id', logId)
+                    .single();
+                
+                if (error || !data) return;
 
-            const titleEl = document.getElementById('singleTitle');
-            titleEl.innerText = log.title;
-            titleEl.style.fontSize = log.titleSize || "2rem";
+                const titleEl = document.getElementById('singleTitle');
+                titleEl.innerText = data.title;
+                titleEl.style.fontSize = data.titleSize || "2rem";
 
-            document.getElementById('singleDate').innerText = log.date;
-            document.getElementById('singleCategory').innerText = log.category || 'PLACES';
-            
-            const bodyEl = document.getElementById('singleBody');
-            bodyEl.innerHTML = log.content;
+                document.getElementById('singleDate').innerText = data.date;
+                document.getElementById('singleCategory').innerText = data.category || 'PLACES';
+                
+                const bodyEl = document.getElementById('singleBody');
+                bodyEl.innerHTML = data.content;
 
-            bodyEl.querySelectorAll('img').forEach(img => {
-                img.onclick = () => openLightbox(img.src);
-            });
+                bodyEl.querySelectorAll('img').forEach(img => {
+                    img.onclick = () => openLightbox(img.src);
+                });
+            } catch (err) {
+                console.error(err);
+            }
         }
 
         // Editor Commands & Point Size Logic
@@ -1265,7 +1305,7 @@
             document.getElementById('editorModal').classList.remove('active');
         }
 
-        function saveLogPost() {
+        async function saveLogPost() {
             const title = document.getElementById('logTitleInput').value;
             const titleSize = document.getElementById('logTitleSizeInput').value;
             const category = document.getElementById('logCategoryInput').value;
@@ -1273,95 +1313,108 @@
 
             if (!title.trim()) { alert("제목을 입력해주세요."); return; }
 
-            let logs = JSON.parse(localStorage.getItem('mug_logs')) || [];
-
-            if (editingLogId) {
-                const index = logs.findIndex(l => l.id === editingLogId);
-                if (index !== -1) {
-                    logs[index].title = title;
-                    logs[index].titleSize = titleSize;
-                    logs[index].category = category;
-                    logs[index].content = content;
-                }
-            } else {
-                const newLog = {
-                    id: Date.now(),
-                    title,
-                    titleSize,
-                    category,
-                    content,
-                    date: new Date().toISOString().split('T')[0].replace(/-/g, '.')
-                };
-                logs.unshift(newLog);
-                currentLogId = newLog.id;
-            }
-
             try {
-                localStorage.setItem('mug_logs', JSON.stringify(logs));
+                if (editingLogId) {
+                    const { error } = await supabaseClient
+                        .from('posts')
+                        .update({ title, titleSize, category, content })
+                        .eq('id', editingLogId);
+                    if (error) throw error;
+                    currentLogId = editingLogId;
+                } else {
+                    const newLog = {
+                        id: Date.now(),
+                        title,
+                        titleSize,
+                        category,
+                        content,
+                        date: new Date().toISOString().split('T')[0].replace(/-/g, '.')
+                    };
+                    const { error } = await supabaseClient.from('posts').insert([newLog]);
+                    if (error) throw error;
+                    currentLogId = newLog.id;
+                }
+
                 closeEditorModal();
 
                 if (document.getElementById('detailView').style.display !== 'none') {
-                    openDetailView(currentLogId, false);
+                    await openDetailView(currentLogId, false);
                 } else {
                     showAlbumView(false);
                 }
+                alert("게시글이 성공적으로 저장되었습니다.");
             } catch (e) {
-                alert("글 용량이 브라우저 저장 한계를 초과했습니다.");
+                alert("저장 중 오류가 발생했습니다.");
             }
         }
 
-        function editCurrentLog() {
-            const logs = JSON.parse(localStorage.getItem('mug_logs')) || [];
-            const log = logs.find(l => l.id === currentLogId);
-            if (!log) return;
+        async function editCurrentLog() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('posts')
+                    .select('*')
+                    .eq('id', currentLogId)
+                    .single();
+                if (error || !data) return;
 
-            editingLogId = log.id;
-            document.getElementById('modalHeading').innerText = "기록 수정";
-            document.getElementById('logTitleInput').value = log.title;
-            document.getElementById('logTitleSizeInput').value = log.titleSize || "2rem";
-            document.getElementById('logCategoryInput').value = log.category || 'PLACES';
-            document.getElementById('editorContent').innerHTML = log.content;
-            openEditorModal(true);
+                editingLogId = data.id;
+                document.getElementById('modalHeading').innerText = "기록 수정";
+                document.getElementById('logTitleInput').value = data.title;
+                document.getElementById('logTitleSizeInput').value = data.titleSize || "2rem";
+                document.getElementById('logCategoryInput').value = data.category || 'PLACES';
+                document.getElementById('editorContent').innerHTML = data.content;
+                openEditorModal(true);
+            } catch (err) {
+                console.error(err);
+            }
         }
 
-        function deleteCurrentLog() {
+        async function deleteCurrentLog() {
             if (confirm("이 기록을 정말 삭제하시겠습니까?")) {
-                let logs = JSON.parse(localStorage.getItem('mug_logs')) || [];
-                logs = logs.filter(l => l.id !== currentLogId);
-                localStorage.setItem('mug_logs', JSON.stringify(logs));
-                showAlbumView();
+                try {
+                    const { error } = await supabaseClient
+                        .from('posts')
+                        .delete()
+                        .eq('id', currentLogId);
+                    if (error) throw error;
+                    showAlbumView();
+                    alert("기록이 삭제되었습니다.");
+                } catch (e) {
+                    alert("삭제 중 오류가 발생했습니다.");
+                }
             }
         }
 
-        // Data Backup & Restore
-        function exportDataJSON() {
-            const backupData = {
-                mainImg: localStorage.getItem('mug_main_img'),
-                greetingImgs: JSON.parse(localStorage.getItem('mug_greeting_imgs')),
-                logs: JSON.parse(localStorage.getItem('mug_logs'))
-            };
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
-            const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", `mugmnghan_backup_${new Date().toISOString().split('T')[0]}.json`);
-            document.body.appendChild(downloadAnchor);
-            downloadAnchor.click();
-            downloadAnchor.remove();
+        // Data Backup & Restore (JSON 백업)
+        async function exportDataJSON() {
+            try {
+                const { data: posts } = await supabaseClient.from('posts').select('*');
+                const backupData = { posts: posts || [] };
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+                const downloadAnchor = document.createElement('a');
+                downloadAnchor.setAttribute("href", dataStr);
+                downloadAnchor.setAttribute("download", `mugmnghan_backup_${new Date().toISOString().split('T')[0]}.json`);
+                document.body.appendChild(downloadAnchor);
+                downloadAnchor.click();
+                downloadAnchor.remove();
+            } catch (e) {
+                alert("백업 중 오류가 발생했습니다.");
+            }
         }
 
-        function importDataJSON(event) {
+        async function importDataJSON(event) {
             const fileReader = new FileReader();
-            fileReader.onload = function(e) {
+            fileReader.onload = async function(e) {
                 try {
                     const imported = JSON.parse(e.target.result);
-                    if (imported.logs) {
-                        if (imported.mainImg) localStorage.setItem('mug_main_img', imported.mainImg);
-                        if (imported.greetingImgs) localStorage.setItem('mug_greeting_imgs', JSON.stringify(imported.greetingImgs));
-                        localStorage.setItem('mug_logs', JSON.stringify(imported.logs));
-                        loadMainVisual();
-                        renderGreetingPhotos();
-                        renderAlbumView();
-                        alert("데이터가 성공적으로 복원되었습니다.");
+                    if (imported.posts && Array.isArray(imported.posts)) {
+                        for (let post of imported.posts) {
+                            await supabaseClient.from('posts').upsert([post]);
+                        }
+                        await loadMainVisual();
+                        await renderGreetingPhotos();
+                        await renderAlbumView();
+                        alert("데이터가 Supabase에 성공적으로 복원되었습니다.");
                     } else {
                         alert("올바르지 않은 백업 파일 형식입니다.");
                     }
