@@ -965,9 +965,11 @@
             }
         }
 
-        // Main Visual Logic (Supabase 연동)
+        // Main Visual Logic (깜빡임 방지 적용)
         async function loadMainVisual() {
+            const imgEl = document.getElementById('displayMainImg');
             let url = DEFAULT_MAIN_IMG;
+            
             try {
                 const { data, error } = await supabaseClient
                     .from('posts')
@@ -980,7 +982,13 @@
             } catch (err) {
                 console.error(err);
             }
-            document.getElementById('displayMainImg').src = url;
+
+            const tempImg = new Image();
+            tempImg.src = url;
+            tempImg.onload = function() {
+                imgEl.src = url;
+            };
+            
             document.getElementById('editMainImg').value = url;
         }
 
@@ -996,7 +1004,6 @@
         async function saveMainVisual() {
             const url = document.getElementById('editMainImg').value;
             try {
-                // 기존 메인 설정 삭제 후 새로 저장
                 await supabaseClient.from('posts').delete().eq('category', 'SETTING_MAIN');
                 const { error } = await supabaseClient.from('posts').insert([
                     { title: 'MAIN', category: 'SETTING_MAIN', content: url, date: '2026.01.01' }
